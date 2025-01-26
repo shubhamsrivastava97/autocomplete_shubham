@@ -1,0 +1,16 @@
+.suggestions_dropdown {
+  position: absolute;
+  border: 1px solid #ccc;
+  background-color: #fff;
+  z-index: 100;
+}
+
+.suggestion_item {
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.suggestion_item:hover, 
+.highlighted {
+  background-color: #afdaf1;
+}
