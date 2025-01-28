@@ -5,17 +5,15 @@ import styles from "./Editor.module.css";
 import Suggestions from "../components/Suggestions";
 import useKeysHandler from "./KeysHandler";
 import useSuggestionSelector from "./SuggestionSelector";
+import { CompositeDecorator } from "draft-js";
 
 const EditorContainer = () => {
-  const [editorState, setEditorState] = React.useState(
-    EditorState.createEmpty()
-  );
-  const editor = useRef(null);
-
-  const [highlightedIndex, setHighlightedIndex] = React.useState(0);
   const [suggestionsVisible, setSuggestionsVisible] = React.useState(false);
   const [suggestions, setSuggestions] = React.useState([]);
-  const suggestionsList = [
+  const [highlightedIndex, setHighlightedIndex] = React.useState(0);
+  const [, setMatchString] = React.useState("");
+  const [matchStart, setMatchStart] = React.useState(null);
+  const suggestionList = [
     "apple",
     "banana",
     "cherry",
@@ -24,44 +22,82 @@ const EditorContainer = () => {
     "fig",
     "grape",
   ];
-  //Handle before input event
-  const handleBeforeInput = (chars, editorState) => {
-    const contentState = editorState.getCurrentContent();
-    const selection = editorState.getSelection();
-    const block = contentState.getBlockForKey(selection.getStartKey());
+
+  //Decorator
+  const AutocompleteSpan = (props) => {
+    return (
+      <span
+        style={{ color: "blue", fontWeight: "bold" }}
+        data-offset-key={props.offsetKey}
+      >
+        {props.children}
+      </span>
+    );
+  };
+
+  // Define a strategy to find autocomplete entities
+  const autocompleteStrategy = (contentBlock, callback, contentState) => {
+    contentBlock.findEntityRanges((character) => {
+      const entityKey = character.getEntity();
+      return (
+        entityKey !== null &&
+        contentState.getEntity(entityKey).getType() === "AUTOCOMPLETE"
+      );
+    }, callback);
+  };
+
+  const decorator = new CompositeDecorator([
+    {
+      strategy: autocompleteStrategy,
+      component: AutocompleteSpan,
+    },
+  ]);
+  const [editorState, setEditorState] = React.useState(
+    EditorState.createEmpty(decorator)
+  );
+  const editor = useRef(null);
+
+  //Handle change
+  const onChange = (newEditorState) => {
+    const selection = newEditorState.getSelection();
+    const anchorKey = selection.getAnchorKey();
+    const anchorOffset = selection.getAnchorOffset();
+
+    const contentState = newEditorState.getCurrentContent();
+    const block = contentState.getBlockForKey(anchorKey);
     const blockText = block.getText();
 
-    const anchorOffset = selection.getAnchorOffset();
-    const textBeforeCursor = blockText.slice(0, anchorOffset) + chars;
-    console.log(textBeforeCursor); //Debugging
+    const textBeforeCursor = blockText.slice(0, anchorOffset);
 
-    //Check for trigger condition <>
-    if (textBeforeCursor.endsWith("<>")) {
-      setSuggestionsVisible(true);
-      setSuggestions(suggestionsList);
-      return "handled";
-    }
-    //Make suggestions visible
-    if (suggestionsVisible) {
-      const matchStringStart = textBeforeCursor.lastIndexOf("<>") + 2;
-      const matchString = textBeforeCursor.slice(matchStringStart);
+    const lastTriggerIndex = textBeforeCursor.lastIndexOf("<>");
+
+    if (lastTriggerIndex !== -1) {
+      // We are in autocomplete mode
+      const matchString = textBeforeCursor.slice(lastTriggerIndex + 2);
 
       if (matchString.includes("\n")) {
+        // Terminate autocomplete if newline is detected
         setSuggestionsVisible(false);
-        return "not-handled";
+        setMatchString("");
+      } else {
+        setSuggestionsVisible(true);
+        setMatchString(matchString);
+        setMatchStart(lastTriggerIndex + 2);
+
+        // Update suggestions
+        const filteredSuggestions = suggestionList.filter((s) =>
+          s.startsWith(matchString)
+        );
+        setSuggestions(filteredSuggestions);
+        setHighlightedIndex(0);
       }
-      //Filter suggestions based on matchString
-      const filteredSuggestions = suggestionsList.filter((suggestion) =>
-        suggestion.startsWith(matchString)
-      );
-      setSuggestions(filteredSuggestions);
-      // If no suggestions match, close the dropdown
-      if (filteredSuggestions.length === 0) {
-        setSuggestionsVisible(false);
-      }
-      return "handled";
+    } else {
+      // Not in autocomplete mode
+      setSuggestionsVisible(false);
+      setMatchString("");
     }
-    return "not-handled";
+
+    setEditorState(newEditorState);
   };
   //Debugging
   React.useEffect(() => {
@@ -74,6 +110,7 @@ const EditorContainer = () => {
     editorState,
     setEditorState,
     setSuggestionsVisible,
+    matchStart,
   });
 
   //Binding and handling key commands
@@ -83,6 +120,8 @@ const EditorContainer = () => {
     suggestions,
     suggestionsVisible,
     selectSuggestion,
+    editorState,
+    setEditorState,
   });
 
   return (
@@ -94,8 +133,7 @@ const EditorContainer = () => {
         editorState={editorState}
         keyBindingFn={keyBindingFn}
         handleKeyCommand={handleKeyCommand}
-        onChange={setEditorState}
-        handleBeforeInput={handleBeforeInput}
+        onChange={onChange}
         ref={editor}
         placeholder="Type something..."
       />
