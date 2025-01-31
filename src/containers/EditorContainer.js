@@ -135,7 +135,7 @@ const EditorContainer = () => {
         handleKeyCommand={handleKeyCommand}
         onChange={onChange}
         ref={editor}
-        placeholder="Type something..."
+        placeholder="Type <> for suggestions..."
       />
       <Suggestions
         suggestionsVisible={suggestionsVisible}
